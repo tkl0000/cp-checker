@@ -1,0 +1,10 @@
+[package]
+name = "cp-checker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+color-eyre = "*"
+ratatui = "*"
+crossterm = "*"
+tui-textarea = "*"
