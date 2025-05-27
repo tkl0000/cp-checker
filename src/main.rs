@@ -10,7 +10,7 @@ use ratatui::text::Text;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::{Block, Borders};
 use ratatui::Terminal;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 use std::time::Instant;
@@ -95,6 +95,17 @@ fn run(textareas: &mut [TextArea], bin_path: &str) -> (Status, String) {
                 }
                 None => {
                     child.kill().unwrap();
+                    let output = child.wait_with_output().expect("Failed to wait");
+                    let output_str = String::from_utf8_lossy(&output.stdout);
+                    let output_lines: Vec<String> = output_str.lines().map(String::from).collect();
+                    while textareas[2].cursor() != (0, 0) {
+                        textareas[2].delete_line_by_head();
+                    }
+                    for line in output_lines.iter() {
+                        textareas[2].insert_str(line);
+                        textareas[2].insert_newline();
+                    }
+
                     return (
                         Status::Error,
                         String::from(format!("ERR: Time Limit Exceeded ({} ms)", ms)),
@@ -102,7 +113,7 @@ fn run(textareas: &mut [TextArea], bin_path: &str) -> (Status, String) {
                 }
             };
         }
-        Err(e) => {
+        Err(_e) => {
             return (
                 Status::Error,
                 String::from(format!("ERR: Failed to execute {}", bin_path)),
