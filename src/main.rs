@@ -1,4 +1,5 @@
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture, KeyEvent};
+use crossterm::event::DisableMouseCapture;
+use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
@@ -9,15 +10,18 @@ use ratatui::text::Text;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::{Block, Borders};
 use ratatui::Terminal;
-// use std::cmp;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
+use std::time::Duration;
+use std::time::Instant;
 use tui_textarea::{Input, Key, TextArea};
+use wait_timeout::ChildExt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Status {
     Pass,
     Fail,
+    Error,
     Idle,
 }
 
@@ -31,6 +35,7 @@ fn update(textarea: &mut TextArea<'_>, label: &'static str, status: Status) {
                 Status::Pass => Color::Green,
                 Status::Fail => Color::Red,
                 Status::Idle => Color::DarkGray,
+                Status::Error => Color::Yellow,
             }))
             .title(label),
     );
@@ -58,81 +63,136 @@ fn activate(textarea: &mut TextArea<'_>, label: &'static str) {
     );
 }
 
-fn run(textareas: &mut [TextArea], bin_path: &str) -> bool {
+fn run(textareas: &mut [TextArea], bin_path: &str) -> (Status, String) {
     let input = textareas[0].lines().join("\n");
     if input.len() == 0 {
-        return false;
+        return (Status::Error, String::from("ERR: Empty Input"));
     }
-    let result = Command::new(&bin_path)
+
+    let mut result: Vec<String> = Vec::from([]);
+    let mut duration = 0;
+    match Command::new(&bin_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .and_then(|mut child| {
+    {
+        Ok(mut child) => {
             if let Some(stdin) = child.stdin.as_mut() {
-                stdin.write_all(input.as_bytes())?;
+                stdin
+                    .write_all(input.as_bytes())
+                    .expect("Failed to write to stdin");
             }
-            let output = child.wait_with_output()?;
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            let output_lines: Vec<String> = output_str.lines().map(String::from).collect();
-            Ok(output_lines)
-        });
-    let mut pass = true;
-    if let Ok(lines) = result {
-        while textareas[2].cursor() != (0, 0) {
-            textareas[2].delete_line_by_head();
+            let ms = 2000;
+            let timeout_ms = Duration::from_millis(ms);
+            let start = Instant::now();
+            match child.wait_timeout(timeout_ms).unwrap() {
+                Some(_status) => {
+                    duration = start.elapsed().as_millis();
+                    let output = child.wait_with_output().unwrap();
+                    let output_str = String::from_utf8_lossy(&output.stdout);
+                    let output_lines: Vec<String> = output_str.lines().map(String::from).collect();
+                    result = output_lines;
+                }
+                None => {
+                    child.kill().unwrap();
+                    return (
+                        Status::Error,
+                        String::from(format!("ERR: Time Limit Exceeded ({} ms)", ms)),
+                    );
+                }
+            };
         }
-        for line in lines.iter() {
-            textareas[2].insert_str(line);
-            textareas[2].insert_newline();
+        Err(e) => {
+            return (
+                Status::Error,
+                String::from(format!("ERR: Failed to execute {}", bin_path)),
+            );
         }
-        let output = lines.join("\n");
-        let expected_output = textareas[1].lines().join("\n");
-        pass =
-            output.trim().trim_end_matches("\n") == expected_output.trim().trim_end_matches("\n");
-
-        // let expected = textareas[1].lines();
-        // let lines_len = lines.len();
-        // let expected_len = expected.len();
-        // let mut pnt = 0;
-        // if lines_len != expected_len {
-        //     pass = false;
-        // } else {
-        //     while pnt < cmp::min(lines_len, expected_len) {
-        //         if &lines[pnt] != &expected[pnt] {
-        //             pass = false;
-        //         }
-        //         pnt += 1;
-        //     }
-        // }
-    } else {
-        textareas[2].insert_str("Failed to execute binary".to_string());
-        pass = false;
     }
-    pass
+
+    // let result = Command::new(&bin_path)
+    //     .stdin(Stdio::piped())
+    //     .stdout(Stdio::piped())
+    //     .spawn()
+    //     .and_then(|mut child| {
+    //         if let Some(stdin) = child.stdin.as_mut() {
+    //             stdin.write_all(input.as_bytes())?;
+    //         }
+    //         let output = child.wait_with_output()?;
+    //         let output_str = String::from_utf8_lossy(&output.stdout);
+    //         let output_lines: Vec<String> = output_str.lines().map(String::from).collect();
+    //         Ok(output_lines)
+    //     });
+
+    let lines = result;
+    while textareas[2].cursor() != (0, 0) {
+        textareas[2].delete_line_by_head();
+    }
+    for line in lines.iter() {
+        textareas[2].insert_str(line);
+        textareas[2].insert_newline();
+    }
+    let output = lines.join("\n");
+    let expected_output = textareas[1].lines().join("\n");
+    if output.trim().trim_end_matches("\n") == expected_output.trim().trim_end_matches("\n") {
+        return (Status::Pass, String::from(format!("AC | {} ms", duration)));
+    } else {
+        return (Status::Fail, String::from(format!("WA | {} ms", duration)));
+    }
+
+    // let expected = textareas[1].lines();
+    // let lines_len = lines.len();
+    // let expected_len = expected.len();
+    // let mut pnt = 0;
+    // if lines_len != expected_len {
+    //     pass = false;
+    // } else {
+    //     while pnt < cmp::min(lines_len, expected_len) {
+    //         if &lines[pnt] != &expected[pnt] {
+    //             pass = false;
+    //         }
+    //         pnt += 1;
+    //     }
+    // }
 }
+
+// fn cleanup_terminal() -> io::Result<()> {
+//     disable_raw_mode()?;
+//     execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
+//     Ok(())
+// }
 
 fn main() -> io::Result<()> {
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
     enable_raw_mode()?;
-    crossterm::execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    crossterm::execute!(stdout, EnterAlternateScreen,)?;
     let backend = CrosstermBackend::new(stdout);
     let mut term = Terminal::new(backend)?;
 
-    let bin_path = std::env::args().nth(1).unwrap_or_else(|| {
+    let Some(bin_path) = std::env::args().nth(1) else {
+        disable_raw_mode()?;
+        crossterm::execute!(
+            term.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
+        term.show_cursor()?;
         eprintln!("Usage: cp-checker <path-to-binary>");
-        let _ = disable_raw_mode();
-        std::process::exit(1);
-    });
+        return Ok(());
+    };
 
     let mut textarea = [
         TextArea::default(),
         TextArea::default(),
         TextArea::default(),
     ];
-    let mut footer = Paragraph::new(Text::from("Ctrl+R = run | Ctrl+X = switch | Esc = quit"))
-        .style(Style::default().fg(Color::DarkGray))
-        .block(Block::default());
+    let mut footer = Paragraph::new(Text::from(format!(
+        "Ctrl+R = run | Ctrl+X = switch | Esc = quit \nExecuting {}",
+        bin_path
+    )))
+    .style(Style::default().fg(Color::DarkGray))
+    .block(Block::default());
     let labels = ["Input", "Expected Output", "Output"];
 
     let mut which = 0;
@@ -177,19 +237,28 @@ fn main() -> io::Result<()> {
                 ..
             } => {
                 let res = run(&mut textarea, &bin_path);
-                if res {
+                let res_code = res.0;
+                let res_message = res.1;
+                if res_code == Status::Pass {
                     update(&mut textarea[0], labels[0], Status::Pass);
                     update(&mut textarea[1], labels[1], Status::Pass);
                     update(&mut textarea[2], labels[2], Status::Pass);
-                    footer = Paragraph::new(Text::from("PASS"))
+                    footer = Paragraph::new(Text::from(res_message))
                         .style(Style::default().fg(Color::Green))
                         .block(Block::default());
-                } else {
+                } else if res_code == Status::Fail {
                     update(&mut textarea[0], labels[0], Status::Fail);
                     update(&mut textarea[1], labels[1], Status::Fail);
                     update(&mut textarea[2], labels[2], Status::Fail);
-                    footer = Paragraph::new(Text::from("FAIL"))
+                    footer = Paragraph::new(Text::from(res_message))
                         .style(Style::default().fg(Color::Red))
+                        .block(Block::default());
+                } else if res_code == Status::Error {
+                    update(&mut textarea[0], labels[0], Status::Error);
+                    update(&mut textarea[1], labels[1], Status::Error);
+                    update(&mut textarea[2], labels[2], Status::Error);
+                    footer = Paragraph::new(Text::from(res_message))
+                        .style(Style::default().fg(Color::Yellow))
                         .block(Block::default());
                 }
             }
@@ -198,7 +267,7 @@ fn main() -> io::Result<()> {
                 activate(&mut textarea[which], labels[which]);
                 inactivate(&mut textarea[(which + 1) % 2], labels[(which + 1) % 2]);
                 update(&mut textarea[2], labels[2], Status::Idle);
-                footer = Paragraph::new(Text::from("Ctrl+R = run | Ctrl+X = switch | Esc = quit"))
+                footer = Paragraph::new(Text::from(format!("Executing {}", bin_path)))
                     .style(Style::default().fg(Color::DarkGray))
                     .block(Block::default());
             } // input => {}
