@@ -9,7 +9,7 @@ use ratatui::text::Text;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::{Block, Borders};
 use ratatui::Terminal;
-use std::cmp;
+// use std::cmp;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
 use tui_textarea::{Input, Key, TextArea};
@@ -85,22 +85,28 @@ fn run(textareas: &mut [TextArea], bin_path: &str) -> bool {
             textareas[2].insert_str(line);
             textareas[2].insert_newline();
         }
-        let expected = textareas[1].lines();
-        let lines_len = lines.len();
-        let expected_len = expected.len();
-        let mut pnt = 0;
-        if lines_len != expected_len {
-            pass = false;
-        } else {
-            while pnt < cmp::min(lines_len, expected_len) {
-                if &lines[pnt] != &expected[pnt] {
-                    pass = false;
-                }
-                pnt += 1;
-            }
-        }
+        let output = lines.join("\n");
+        let expected_output = textareas[1].lines().join("\n");
+        pass =
+            output.trim().trim_end_matches("\n") == expected_output.trim().trim_end_matches("\n");
+
+        // let expected = textareas[1].lines();
+        // let lines_len = lines.len();
+        // let expected_len = expected.len();
+        // let mut pnt = 0;
+        // if lines_len != expected_len {
+        //     pass = false;
+        // } else {
+        //     while pnt < cmp::min(lines_len, expected_len) {
+        //         if &lines[pnt] != &expected[pnt] {
+        //             pass = false;
+        //         }
+        //         pnt += 1;
+        //     }
+        // }
     } else {
         textareas[2].insert_str("Failed to execute binary".to_string());
+        pass = false;
     }
     pass
 }
@@ -113,6 +119,12 @@ fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut term = Terminal::new(backend)?;
 
+    let bin_path = std::env::args().nth(1).unwrap_or_else(|| {
+        eprintln!("Usage: cp-checker <path-to-binary>");
+        let _ = disable_raw_mode();
+        std::process::exit(1);
+    });
+
     let mut textarea = [
         TextArea::default(),
         TextArea::default(),
@@ -122,10 +134,6 @@ fn main() -> io::Result<()> {
         .style(Style::default().fg(Color::DarkGray))
         .block(Block::default());
     let labels = ["Input", "Expected Output", "Output"];
-
-    let mut args = std::env::args();
-    args.next();
-    let bin_path = args.next().expect("Usage: program <path-to-binary>");
 
     let mut which = 0;
     activate(&mut textarea[0], labels[0]);
