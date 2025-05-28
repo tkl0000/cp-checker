@@ -1,5 +1,4 @@
-use crossterm::event::DisableMouseCapture;
-use crossterm::execute;
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
@@ -121,20 +120,6 @@ fn run(textareas: &mut [TextArea], bin_path: &str) -> (Status, String) {
         }
     }
 
-    // let result = Command::new(&bin_path)
-    //     .stdin(Stdio::piped())
-    //     .stdout(Stdio::piped())
-    //     .spawn()
-    //     .and_then(|mut child| {
-    //         if let Some(stdin) = child.stdin.as_mut() {
-    //             stdin.write_all(input.as_bytes())?;
-    //         }
-    //         let output = child.wait_with_output()?;
-    //         let output_str = String::from_utf8_lossy(&output.stdout);
-    //         let output_lines: Vec<String> = output_str.lines().map(String::from).collect();
-    //         Ok(output_lines)
-    //     });
-
     let lines = result;
     while textareas[2].cursor() != (0, 0) {
         textareas[2].delete_line_by_head();
@@ -150,34 +135,13 @@ fn run(textareas: &mut [TextArea], bin_path: &str) -> (Status, String) {
     } else {
         return (Status::Fail, String::from(format!("WA | {} ms", duration)));
     }
-
-    // let expected = textareas[1].lines();
-    // let lines_len = lines.len();
-    // let expected_len = expected.len();
-    // let mut pnt = 0;
-    // if lines_len != expected_len {
-    //     pass = false;
-    // } else {
-    //     while pnt < cmp::min(lines_len, expected_len) {
-    //         if &lines[pnt] != &expected[pnt] {
-    //             pass = false;
-    //         }
-    //         pnt += 1;
-    //     }
-    // }
 }
-
-// fn cleanup_terminal() -> io::Result<()> {
-//     disable_raw_mode()?;
-//     execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
-//     Ok(())
-// }
 
 fn main() -> io::Result<()> {
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
     enable_raw_mode()?;
-    crossterm::execute!(stdout, EnterAlternateScreen,)?;
+    crossterm::execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut term = Terminal::new(backend)?;
 
@@ -211,6 +175,8 @@ fn main() -> io::Result<()> {
     inactivate(&mut textarea[1], labels[1]);
     inactivate(&mut textarea[2], labels[2]);
 
+    cp_checker::load_cache(&mut textarea);
+
     loop {
         term.draw(|f| {
             let main_layout = Layout::default()
@@ -237,10 +203,10 @@ fn main() -> io::Result<()> {
                 ctrl: true,
                 ..
             } => {
-                inactivate(&mut textarea[which], labels[which]);
-                which = (which + 1) % 2;
+                which = (which + 1) % 3;
                 activate(&mut textarea[which], labels[which]);
-                update(&mut textarea[2], labels[2], Status::Idle);
+                inactivate(&mut textarea[(which + 1) % 3], labels[(which + 1) % 3]);
+                inactivate(&mut textarea[(which + 2) % 3], labels[(which + 2) % 3]);
             }
             Input {
                 key: Key::Char('r'),
@@ -274,13 +240,16 @@ fn main() -> io::Result<()> {
                 }
             }
             input @ Input { .. } => {
-                textarea[which].input(input);
+                if which != 2 || cp_checker::is_movement(&input) {
+                    textarea[which].input(input);
+                }
                 activate(&mut textarea[which], labels[which]);
-                inactivate(&mut textarea[(which + 1) % 2], labels[(which + 1) % 2]);
-                update(&mut textarea[2], labels[2], Status::Idle);
+                inactivate(&mut textarea[(which + 1) % 3], labels[(which + 1) % 3]);
+                inactivate(&mut textarea[(which + 2) % 3], labels[(which + 2) % 3]);
                 footer = Paragraph::new(Text::from(format!("Executing {}", bin_path)))
                     .style(Style::default().fg(Color::DarkGray))
                     .block(Block::default());
+                cp_checker::save_cache(&textarea)?;
             } // input => {}
         }
     }
@@ -292,8 +261,5 @@ fn main() -> io::Result<()> {
         DisableMouseCapture
     )?;
     term.show_cursor()?;
-
-    // println!("Left textarea: {:?}", textarea[0].lines());
-    // println!("Right textarea: {:?}", textarea[1].lines());
     Ok(())
 }

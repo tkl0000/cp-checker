@@ -9,3 +9,6 @@ ratatui = "*"
 crossterm = "*"
 tui-textarea = "*"
 wait-timeout = "0.2.1"
+serde = {version = "1.0.219", features = ["derive"]}
+serde_json = "1.0.140"
+dirs = "6.0.0"
