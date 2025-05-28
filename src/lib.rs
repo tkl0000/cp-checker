@@ -179,4 +179,29 @@ pub fn run(textareas: &mut [TextArea], bin_path: &str) -> (Status, String) {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_get_cache_path() {
+        let path = get_cache_path();
+
+        // Expected default filenameA
+        println!("{}", path.to_str().unwrap());
+        assert!(path.ends_with(".cp_checker"));
+
+        // If home_dir is set, it should be inside home dir
+        if let Some(home) = dirs::home_dir() {
+            assert!(
+                path.starts_with(&home),
+                "Expected path to start with home directory: {:?}",
+                home
+            );
+        } else {
+            // Otherwise it should be in current directory
+            let current_dir = env::current_dir().unwrap();
+            assert!(path.starts_with(&current_dir));
+        }
+    }
+}
