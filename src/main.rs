@@ -5,10 +5,10 @@ use crossterm::terminal::{
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::text::Text;
+use ratatui::widgets::Block;
 use ratatui::widgets::Paragraph;
-use ratatui::widgets::{Block, Borders};
 use ratatui::Terminal;
 use std::io;
 use tui_textarea::{Input, Key, TextArea};
