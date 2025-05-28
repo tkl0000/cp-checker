@@ -13,9 +13,11 @@ pub fn insert_lines(textarea: &mut TextArea<'_>, lines: &Vec<String>) {
     while textarea.cursor() != (0, 0) {
         textarea.delete_line_by_head();
     }
-    for line in lines.iter() {
-        textarea.insert_str(line);
-        textarea.insert_newline();
+    for i in 0..lines.len() {
+        textarea.insert_str(&lines[i]);
+        if i != lines.len() - 1 {
+            textarea.insert_newline();
+        }
     }
 }
 
