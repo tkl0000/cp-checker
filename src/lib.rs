@@ -6,18 +6,24 @@ use serde::{Deserialize, Serialize};
 use std::{fs::File, process::Command, time::Instant};
 use std::{io::Write, process::Stdio};
 use std::{path::PathBuf, time::Duration};
-use tui_textarea::{Input, Key, TextArea};
+use tui_textarea::{CursorMove, Input, Key, TextArea};
 use wait_timeout::ChildExt;
 
 pub fn insert_lines(textarea: &mut TextArea<'_>, lines: &Vec<String>) {
-    while textarea.cursor() != (0, 0) {
-        textarea.delete_line_by_head();
-    }
+    delete_lines(textarea);
     for i in 0..lines.len() {
         textarea.insert_str(&lines[i]);
         if i != lines.len() - 1 {
             textarea.insert_newline();
         }
+    }
+}
+
+pub fn delete_lines(textarea: &mut TextArea<'_>) {
+    textarea.move_cursor(CursorMove::Bottom);
+    textarea.move_cursor(CursorMove::End);
+    while textarea.cursor() != (0, 0) {
+        textarea.delete_line_by_head();
     }
 }
 

@@ -1,4 +1,6 @@
-use cp_checker::{activate, inactivate, is_movement, load_cache, run, save_cache, update, Status};
+use cp_checker::{
+    activate, delete_lines, inactivate, is_movement, load_cache, run, save_cache, update, Status,
+};
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -40,7 +42,7 @@ fn main() -> io::Result<()> {
     ];
 
     let mut footer = Paragraph::new(Text::from(format!(
-        "Ctrl+R = run | Ctrl+X = switch | Esc = quit \nExecuting {}",
+        "Ctrl+R = run | Ctrl+X = switch | Ctrl+D = clear input | Esc = quit \nExecuting {}",
         bin_path
     )))
     .style(Style::default().fg(Color::DarkGray))
@@ -88,6 +90,15 @@ fn main() -> io::Result<()> {
                 footer = Paragraph::new(Text::from(format!("Executing {}", bin_path)))
                     .style(Style::default().fg(Color::DarkGray))
                     .block(Block::default());
+            }
+            Input {
+                key: Key::Char('d'),
+                ctrl: true,
+                ..
+            } => {
+                if which != 2 {
+                    delete_lines(&mut textarea[which]);
+                }
             }
             Input {
                 key: Key::Char('r'),
